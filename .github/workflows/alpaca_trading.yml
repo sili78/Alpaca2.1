@@ -1,0 +1,83 @@
+name: Alpaca Trading Bot (Hybrid Yahoo)
+
+on:
+  workflow_dispatch:  # Buton manual de Start
+  schedule:
+    # Rulează la fiecare 15 minute
+    # Luni-Vineri: 09:00 - 23:00 UTC (Acoperă Pre-Market, Market, After-Hours)
+    - cron: "*/15 9-23 * * 1-5"
+    # Marți-Sâmbătă: 00:00 UTC (Ultima oră din After-Hours SUA)
+    - cron: "*/15 0 * * 2-6"
+
+permissions:
+  contents: write # ⚠️ CRITIC: Permite botului să salveze memoria (state.json)
+
+concurrency:
+  group: alpaca-trading-gme
+  cancel-in-progress: false
+
+jobs:
+  run-strategy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      # 1. Descărcăm codul din GitHub
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Instalăm Python
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3. Instalăm dependințele (INCLUSIV YFINANCE)
+      - name: Install Dependencies
+        run: |
+          pip install pandas numpy requests yfinance
+
+      # 4. Rulăm Scriptul Python
+      - name: Run Trading Bot
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
+          # Dacă URL-ul nu e setat în secrets, scriptul va folosi Paper implicit
+          ALPACA_BASE_URL: ${{ secrets.ALPACA_BASE_URL }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          # Dacă nu există fișierul de memorie, îl creăm gol
+          if [ ! -f state.json ]; then echo "{}" > state.json; fi
+          
+          # Pornim scriptul
+          python tv_style_alpaca_flip.py \
+            --symbol "GME" \
+            --qty 250 \
+            --state "./state.json"
+
+      # 5. SALVĂM MEMORIA (Commit & Push)
+      # Asta asigură că botul ține minte ultima tranzacție și nu cumpără dublu
+      - name: Save State (Commit)
+        run: |
+          git config --global user.name "Alpaca Bot"
+          git config --global user.email "bot@alpaca.markets"
+          
+          # Verificăm dacă s-a modificat fișierul state.json
+          if [[ -n $(git status -s state.json) ]]; then
+            git add state.json
+            git commit -m "🤖 Bot Memory Update [skip ci]"
+            git push
+            echo "✅ Memoria a fost salvată."
+          else
+            echo "💤 Nicio schimbare. Nu salvez nimic."
+          fi
+
+      # 6. Curățenie Automată (Păstrează doar ultimele 10 log-uri ca să nu aglomereze)
+      - name: Delete Old Workflow Runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 10
