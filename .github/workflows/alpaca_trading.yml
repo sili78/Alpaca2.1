@@ -1,83 +1,67 @@
 name: Alpaca Trading Bot (Hybrid Yahoo)
 
 on:
-  workflow_dispatch:  # Buton manual de Start
   schedule:
-    # Rulează la fiecare 15 minute
-    # Luni-Vineri: 09:00 - 23:00 UTC (Acoperă Pre-Market, Market, After-Hours)
+    # Rulează la fiecare 15 minute, de luni până vineri, între orele 09:00 și 23:00 UTC
     - cron: "*/15 9-23 * * 1-5"
-    # Marți-Sâmbătă: 00:00 UTC (Ultima oră din After-Hours SUA)
-    - cron: "*/15 0 * * 2-6"
+  workflow_dispatch: # Permite rularea manuală din interfața GitHub
 
+# Permisiunile necesare pentru ca botul să poată șterge log-urile vechi (Cleanup)
 permissions:
-  contents: write # ⚠️ CRITIC: Permite botului să salveze memoria (state.json)
-
-concurrency:
-  group: alpaca-trading-gme
-  cancel-in-progress: false
+  contents: read
+  actions: write
 
 jobs:
   run-strategy:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-
     steps:
-      # 1. Descărcăm codul din GitHub
+      # 1. Descarcă codul din repository
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Instalăm Python
-      - name: Set up Python 3.11
+      # 2. Instalează Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.10"
 
-      # 3. Instalăm dependințele (INCLUSIV YFINANCE)
+      # 3. Instalează librăriile necesare
       - name: Install Dependencies
         run: |
-          pip install pandas numpy requests yfinance
+          python -m pip install --upgrade pip
+          pip install yfinance pandas numpy requests
 
-      # 4. Rulăm Scriptul Python
-      - name: Run Trading Bot
+      # 4. Verifică/Creează fișierul de stare (Memoria Botului)
+      - name: Setup State File
+        run: |
+          if [ ! -f state.json ]; then
+            echo '{}' > state.json
+          fi
+
+      # 5. Execută Scriptul de Trading
+      - name: Run Trading Script
         env:
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
-          # Dacă URL-ul nu e setat în secrets, scriptul va folosi Paper implicit
-          ALPACA_BASE_URL: ${{ secrets.ALPACA_BASE_URL }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          # Dacă nu există fișierul de memorie, îl creăm gol
-          if [ ! -f state.json ]; then echo "{}" > state.json; fi
-          
-          # Pornim scriptul
-          python tv_style_alpaca_flip.py \
-            --symbol "GME" \
-            --qty 250 \
-            --state "./state.json"
+        # Verifică dacă numele fișierului .py de mai jos este identic cu cel din repository-ul tău
+        run: python tv_style_alpaca_flip.py
 
-      # 5. SALVĂM MEMORIA (Commit & Push)
-      # Asta asigură că botul ține minte ultima tranzacție și nu cumpără dublu
-      - name: Save State (Commit)
+      # 6. Salvează starea pentru rularea următoare
+      - name: Commit State
         run: |
-          git config --global user.name "Alpaca Bot"
-          git config --global user.email "bot@alpaca.markets"
-          
-          # Verificăm dacă s-a modificat fișierul state.json
-          if [[ -n $(git status -s state.json) ]]; then
-            git add state.json
-            git commit -m "🤖 Bot Memory Update [skip ci]"
-            git push
-            echo "✅ Memoria a fost salvată."
-          else
-            echo "💤 Nicio schimbare. Nu salvez nimic."
-          fi
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add state.json
+          git commit -m "Update state [skip ci]" || echo "No changes to commit"
+          git push
 
-      # 6. Curățenie Automată (Păstrează doar ultimele 10 log-uri ca să nu aglomereze)
-      - name: Delete Old Workflow Runs
-        uses: Mattraks/delete-workflow-runs@v2
+      # 7. CURĂȚENIE: Șterge istoricul rulărilor vechi (ca să rămână curat)
+      - name: Cleanup Old Workflow Runs
+        uses: Mattraider/delete-workflow-runs-action@v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
           retain_days: 0
-          keep_minimum_runs: 10
+          keep_minimum_runs: 3
