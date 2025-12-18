@@ -2,66 +2,51 @@ name: Alpaca Trading Bot (Hybrid Yahoo)
 
 on:
   schedule:
-    # Rulează la fiecare 15 minute, de luni până vineri, între orele 09:00 și 23:00 UTC
     - cron: "*/15 9-23 * * 1-5"
-  workflow_dispatch: # Permite rularea manuală din interfața GitHub
+  workflow_dispatch:
 
-# Permisiunile necesare pentru ca botul să poată șterge log-urile vechi (Cleanup)
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 jobs:
   run-strategy:
     runs-on: ubuntu-latest
     steps:
-      # 1. Descarcă codul din repository
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Instalează Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      # 3. Instalează librăriile necesare
       - name: Install Dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install yfinance pandas numpy requests
 
-      # 4. Verifică/Creează fișierul de stare (Memoria Botului)
       - name: Setup State File
         run: |
-          if [ ! -f state.json ]; then
-            echo '{}' > state.json
-          fi
+          if [ ! -f state.json ]; then echo '{}' > state.json; fi
 
-      # 5. Execută Scriptul de Trading
       - name: Run Trading Script
         env:
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        # Verifică dacă numele fișierului .py de mai jos este identic cu cel din repository-ul tău
         run: python tv_style_alpaca_flip.py
 
-      # 6. Salvează starea pentru rularea următoare
       - name: Commit State
         run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
           git add state.json
-          git commit -m "Update state [skip ci]" || echo "No changes to commit"
+          git commit -m "Update state [skip ci]" || echo "No changes"
           git push
 
-      # 7. CURĂȚENIE: Șterge istoricul rulărilor vechi (ca să rămână curat)
-      - name: Cleanup Old Workflow Runs
-        uses: Mattraider/delete-workflow-runs-action@v2
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 3
+      - name: Cleanup Old Logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run delete --all --repo ${{ github.repository }} --status success || echo "Nimic de sters"
