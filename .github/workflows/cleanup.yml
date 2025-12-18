@@ -1,0 +1,28 @@
+name: 🧹 Manual Logs Cleanup
+
+on:
+  workflow_dispatch: # Îți oferă un buton de "Run" manual în interfața Actions
+
+permissions:
+  actions: write # Permisiune obligatorie pentru ștergere
+
+jobs:
+  delete-runs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Obținem ID-urile ultimelor 100 de rulări (fără cea curentă) și le ștergem
+          RUNS=$(gh run list --limit 100 --json databaseId --jq '.[].databaseId')
+          
+          if [ -z "$RUNS" ]; then
+            echo "Nu există log-uri de șters."
+          else
+            for id in $RUNS; do
+              echo "Șterg rularea cu ID: $id"
+              gh run delete $id || echo "Nu s-a putut șterge $id"
+            done
+            echo "✅ Curățenie terminată!"
+          fi
