@@ -44,9 +44,3 @@ jobs:
           git add state.json
           git commit -m "Update state [skip ci]" || echo "No changes"
           git push
-
-      - name: Cleanup Old Logs
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh run delete --all --repo ${{ github.repository }} --status success || echo "Nimic de sters"
